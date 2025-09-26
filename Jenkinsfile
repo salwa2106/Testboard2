@@ -3,8 +3,8 @@ pipeline {
   options { timestamps() }
 
   environment {
-    // Ensure PowerShell, Docker & Python are on PATH.
-    PATH = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313\\Scripts;${PATH}"
+    // Ensure system dirs, PowerShell, Docker & Python are on PATH (order matters)
+    PATH = "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313\\Scripts;${PATH}"
     POWERSHELL_EXE = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
 
     BACKEND_BASE = 'http://localhost:8000'
@@ -30,16 +30,13 @@ pipeline {
     stage('Ensure DB running') {
       steps {
         bat '''
-          docker ps -a --format "{{.Names}}" | findstr /I /R "^backend-db-1$" >nul
-          if errorlevel 1 (
-            if exist backend\\docker-compose.db.yml (
-              docker compose -f backend\\docker-compose.db.yml up -d || docker-compose -f backend\\docker-compose.db.yml up -d
-            ) else (
-              echo Compose file missing; starting Postgres directly...
-              docker run -d --name backend-db-1 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=testboard -p 5432:5432 postgres:16
-            )
+          rem Prefer compose file if it exists (idempotent: up -d can be run multiple times)
+          if exist backend\\docker-compose.db.yml (
+            docker compose -f backend\\docker-compose.db.yml up -d || docker-compose -f backend\\docker-compose.db.yml up -d
           ) else (
-            docker start backend-db-1 >nul 2>&1
+            rem No compose file? ensure a postgres container exists (only create if missing)
+            docker inspect backend-db-1 >NUL 2>&1 || docker run -d --name backend-db-1 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=testboard -p 5432:5432 postgres:16
+            docker start backend-db-1 >NUL 2>&1
           )
           docker ps
         '''
