@@ -23,6 +23,8 @@ pipeline {
           python -m venv .venv
           "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pip install --upgrade pip
           "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pip install -r requirements.txt
+          rem Just in case: remove wrong PyPI 'app' package if ever installed
+          "%WORKSPACE%\\.venv\\Scripts\\pip.exe" uninstall -y app || ver >NUL
         '''
       }
     }
@@ -30,11 +32,9 @@ pipeline {
     stage('Ensure DB running') {
       steps {
         bat '''
-          rem Prefer compose file if it exists (idempotent: up -d can be run multiple times)
           if exist backend\\docker-compose.db.yml (
             docker compose -f backend\\docker-compose.db.yml up -d || docker-compose -f backend\\docker-compose.db.yml up -d
           ) else (
-            rem No compose file? ensure a postgres container exists (only create if missing)
             docker inspect backend-db-1 >NUL 2>&1 || docker run -d --name backend-db-1 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=testboard -p 5432:5432 postgres:16
             docker start backend-db-1 >NUL 2>&1
           )
@@ -46,7 +46,7 @@ pipeline {
     stage('Write backend .env') {
       steps {
         writeFile file: 'backend/.env', text: """
-DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/testboard
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
 """.trim()
       }
     }
@@ -54,8 +54,10 @@ DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/testboard
     stage('Run migrations') {
       steps {
         bat '''
-          cd backend
-          "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m alembic upgrade head
+          if not exist backend\\alembic.ini (
+            echo "backend\\alembic.ini missing" & exit /b 1
+          )
+          "%WORKSPACE%\\.venv\\Scripts\\alembic.exe" -c backend\\alembic.ini upgrade head
         '''
       }
     }
