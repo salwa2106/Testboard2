@@ -105,7 +105,9 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       steps {
         script {
           def result = bat(script: '''
-            "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pytest --junitxml=report.xml
+            cd backend
+            copy .env ..\\backend.env 2>NUL || echo "No .env file to copy"
+            "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pytest --junitxml=../report.xml
           ''', returnStatus: true)
           if (result != 0) {
             echo "pytest had failures; marking UNSTABLE but continuing"
