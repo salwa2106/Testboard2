@@ -53,34 +53,11 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
 
     stage('Wait for Database') {
       steps {
-        powershell '''
-          Write-Host "Waiting for PostgreSQL database to be ready..."
-          $maxAttempts = 60
-          $attempt = 1
-
-          while ($attempt -le $maxAttempts) {
-            Write-Host "Attempt $attempt`: Testing database connection..."
-
-            try {
-              $result = & "$env:WORKSPACE\\.venv\\Scripts\\python.exe" -c "import asyncpg; import asyncio; asyncio.run(asyncpg.connect('postgresql://postgres:postgres@localhost:5432/testboard').close()); print('SUCCESS')" 2>$null
-              if ($result -eq "SUCCESS") {
-                Write-Host "Database connected successfully!"
-                break
-              }
-            }
-            catch {
-              # Connection failed, continue
-            }
-
-            if ($attempt -eq $maxAttempts) {
-              throw "Database failed to start after $($maxAttempts * 2) seconds"
-            }
-
-            Write-Host "Database not ready, waiting 2 seconds..."
-            Start-Sleep -Seconds 2
-            $attempt++
-          }
-        '''
+        script {
+          echo "Waiting for PostgreSQL database to initialize..."
+          sleep(time: 30, unit: "SECONDS")
+          echo "Database wait complete - proceeding with migrations"
+        }
       }
     }
 
