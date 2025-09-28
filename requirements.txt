@@ -9,3 +9,4 @@ python-dotenv
 asyncpg
 pydantic-settings
 email-validator
+python-jose[cryptography]
