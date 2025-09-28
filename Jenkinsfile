@@ -66,21 +66,37 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       steps {
         bat '''
           del /Q api.pid 2>NUL
-          "%POWERSHELL_EXE%" -NoProfile -Command ^
-            "$py=\"$env:WORKSPACE\\.venv\\Scripts\\python.exe\"; $wd=\"$env:WORKSPACE\\backend\"; " ^
-            "$psi=New-Object System.Diagnostics.ProcessStartInfo; " ^
-            "$psi.FileName=$py; $psi.Arguments='-m uvicorn app.main:app --host 0.0.0.0 --port 8000'; " ^
-            "$psi.WorkingDirectory=$wd; $psi.UseShellExecute=$false; " ^
-            "$p=[System.Diagnostics.Process]::Start($psi); Set-Content -Path api.pid -Value $p.Id"
+        '''
+        powershell '''
+          $py = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
+          $wd = "$env:WORKSPACE\\backend"
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $py
+          $psi.Arguments = "-m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+          $psi.WorkingDirectory = $wd
+          $psi.UseShellExecute = $false
+          $p = [System.Diagnostics.Process]::Start($psi)
+          Set-Content -Path "api.pid" -Value $p.Id
         '''
       }
     }
 
     stage('Wait for API') {
       steps {
-        bat '''
-          "%POWERSHELL_EXE%" -NoProfile -Command ^
-            "$ok=$false; for($i=0;$i -lt 60;$i++){ try{ Invoke-WebRequest -UseBasicParsing http://localhost:8000/docs ^| Out-Null; $ok=$true; break }catch{ Start-Sleep -Seconds 1 } } ; if(-not $ok){ throw 'API did not become ready' }"
+        powershell '''
+          $ok = $false
+          for($i = 0; $i -lt 60; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing http://localhost:8000/docs | Out-Null
+              $ok = $true
+              break
+            } catch {
+              Start-Sleep -Seconds 1
+            }
+          }
+          if(-not $ok) {
+            throw "API did not become ready"
+          }
         '''
       }
     }
