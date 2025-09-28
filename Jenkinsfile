@@ -86,8 +86,10 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
           $psi.Arguments = "-m uvicorn app.main:app --host 0.0.0.0 --port 8000"
           $psi.WorkingDirectory = $wd
           $psi.UseShellExecute = $false
+          $psi.CreateNoWindow = $true
           $p = [System.Diagnostics.Process]::Start($psi)
           Set-Content -Path "api.pid" -Value $p.Id
+          Write-Host "API server started with PID: $($p.Id)"
         '''
       }
     }
