@@ -8,6 +8,9 @@ BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+# IMPORTANT: Load environment variables FIRST, before importing settings
+from dotenv import load_dotenv
+load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
 # --- Standard Alembic imports/config ---
 from logging.config import fileConfig
@@ -15,13 +18,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Load app settings & metadata
-from dotenv import load_dotenv
+# Load app settings & metadata AFTER loading .env
 from app.core.config import settings
 from app.db.base import Base
-
-# Load variables from backend/.env that Jenkins writes
-load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
 config = context.config
 if config.config_file_name is not None:
