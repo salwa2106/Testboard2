@@ -51,12 +51,31 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       }
     }
 
+    stage('Wait for Database') {
+      steps {
+        bat '''
+          echo "Waiting for PostgreSQL database to be ready..."
+          for /L %%i in (1,1,60) do (
+            echo Attempt %%i: Testing database connection...
+            "%WORKSPACE%\\.venv\\Scripts\\python.exe" -c "import asyncpg; import asyncio; asyncio.run(asyncpg.connect('postgresql://postgres:postgres@localhost:5432/testboard').close()); print('Database connected successfully!')" 2>nul && goto :db_ready
+            echo Database not ready, waiting 2 seconds...
+            timeout /t 2 /nobreak >nul
+          )
+          echo "ERROR: Database failed to start after 120 seconds"
+          exit /b 1
+          :db_ready
+          echo "Database is ready and accepting connections!"
+        '''
+      }
+    }
+
     stage('Run migrations') {
       steps {
         bat '''
           if not exist backend\\alembic.ini (
             echo "backend\\alembic.ini missing" & exit /b 1
           )
+          echo "Running database migrations..."
           "%WORKSPACE%\\.venv\\Scripts\\alembic.exe" -c backend\\alembic.ini upgrade head
         '''
       }
