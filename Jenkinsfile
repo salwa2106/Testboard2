@@ -92,19 +92,19 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       $lines = cmd /c "netstat -ano | findstr :$port"
       if ($lines) {
         Write-Host "Port $port is in use. Offending PIDs:"
-        $pids = ($lines | ForEach-Object { ($_ -split '\\s+')[-1] } | Select-Object -Unique)
-        foreach ($pid in $pids) {
-          Write-Host "Killing PID $pid"
-          cmd /c "taskkill /PID $pid /F"
+        $procIds = ($lines | ForEach-Object { ($_ -split '\\s+')[-1] } | Select-Object -Unique)
+        foreach ($procId in $procIds) {
+          Write-Host "Killing PID $procId"
+          cmd /c "taskkill /PID $procId /F" | Out-Null
         }
       }
 
       $py  = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
       $wd  = "$env:WORKSPACE\\backend"
-      # working dir is backend, so the env file path is just .env
+      # Working dir is backend → .env is local here
       $arg = "-m uvicorn app.main:app --host 0.0.0.0 --port $port --env-file .env"
 
-      # Detach and capture logs so failures are visible in the console (we’ll print them if wait fails)
+      # Detach and capture logs
       $p = Start-Process -FilePath $py -ArgumentList $arg -WorkingDirectory $wd `
                          -WindowStyle Hidden -PassThru `
                          -RedirectStandardOutput "api.out" -RedirectStandardError "api.err"
@@ -113,6 +113,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
     '''
   }
 }
+
 
 
     stage('Wait for API') {
