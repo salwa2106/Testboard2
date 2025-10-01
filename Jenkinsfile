@@ -7,7 +7,7 @@ pipeline {
     PATH = "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313\\Scripts;${PATH}"
     POWERSHELL_EXE = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
 
-    BACKEND_BASE = 'http://localhost:8000'
+    BACKEND_BASE = 'http://localhost:8001'
     PROJECT_ID   = '1'
     API_USER     = credentials('testboard_user_email')
     API_PASS     = credentials('testboard_user_password')
@@ -64,55 +64,77 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
     stage('Run migrations') {
       steps {
         bat '''
-          if not exist backend\\alembic.ini (
-            echo "backend\\alembic.ini missing" & exit /b 1
-          )
+          if not exist backend\\alembic.ini (echo "backend\\alembic.ini missing" & exit /b 1)
           echo "Running database migrations..."
-          "%WORKSPACE%\\.venv\\Scripts\\alembic.exe" -c backend\\alembic.ini upgrade head
+          pushd backend
+          echo --- Current working dir ---
+          cd
+          echo --- List files ---
+          dir
+          echo --- Show alembic.ini content (first lines) ---
+          type alembic.ini | findstr /C:"script_location"
+          echo --- Show alembic folder ---
+          dir alembic
+          ..\\.venv\\Scripts\\alembic.exe -c alembic.ini current || ver >NUL
+          ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
+         popd
         '''
       }
     }
 
     stage('Start API') {
-      steps {
-        bat '''
-          del /Q api.pid 2>NUL
-        '''
-        powershell '''
-          $py = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
-          $wd = "$env:WORKSPACE\\backend"
-          $psi = New-Object System.Diagnostics.ProcessStartInfo
-          $psi.FileName = $py
-          $psi.Arguments = "-m uvicorn app.main:app --host 0.0.0.0 --port 8000"
-          $psi.WorkingDirectory = $wd
-          $psi.UseShellExecute = $false
-          $psi.CreateNoWindow = $true
-          $p = [System.Diagnostics.Process]::Start($psi)
-          Set-Content -Path "api.pid" -Value $p.Id
-          Write-Host "API server started with PID: $($p.Id)"
-        '''
+     steps {
+      bat 'del /Q api.pid 2>NUL'
+      powershell '''
+      $port = 8001
+
+      # Free the port if something is already listening (prevents hangs)
+      $lines = cmd /c "netstat -ano | findstr :$port"
+      if ($lines) {
+        Write-Host "Port $port is in use. Offending PIDs:"
+        $pids = ($lines | ForEach-Object { ($_ -split '\\s+')[-1] } | Select-Object -Unique)
+        foreach ($pid in $pids) {
+          Write-Host "Killing PID $pid"
+          cmd /c "taskkill /PID $pid /F"
+        }
       }
-    }
+
+      $py  = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
+      $wd  = "$env:WORKSPACE\\backend"
+      # working dir is backend, so the env file path is just .env
+      $arg = "-m uvicorn app.main:app --host 0.0.0.0 --port $port --env-file .env"
+
+      # Detach and capture logs so failures are visible in the console (we’ll print them if wait fails)
+      $p = Start-Process -FilePath $py -ArgumentList $arg -WorkingDirectory $wd `
+                         -WindowStyle Hidden -PassThru `
+                         -RedirectStandardOutput "api.out" -RedirectStandardError "api.err"
+      Set-Content -Path "api.pid" -Value $p.Id
+      Write-Host "API server started with PID: $($p.Id) on port $port"
+    '''
+  }
+}
+
 
     stage('Wait for API') {
-      steps {
-        powershell '''
-          $ok = $false
-          for($i = 0; $i -lt 60; $i++) {
-            try {
-              Invoke-WebRequest -UseBasicParsing http://localhost:8000/docs | Out-Null
-              $ok = $true
-              break
-            } catch {
-              Start-Sleep -Seconds 1
-            }
-          }
-          if(-not $ok) {
-            throw "API did not become ready"
-          }
-        '''
+    steps {
+     powershell '''
+      $url = "http://localhost:8001/docs"
+      $ok = $false
+      for($i=0; $i -lt 60; $i++){
+        try { Invoke-WebRequest -UseBasicParsing $url | Out-Null; $ok = $true; break }
+        catch { Start-Sleep -Seconds 1; if($i % 10 -eq 0){ Write-Host "Waiting for API... ($i s)" } }
       }
-    }
+      if(-not $ok){
+        Write-Host "---- api.err (last 80) ----"; if(Test-Path api.err){ Get-Content api.err -Tail 80 } else { Write-Host "(no api.err)" }
+        Write-Host "---- api.out (last 80) ----"; if(Test-Path api.out){ Get-Content api.out -Tail 80 } else { Write-Host "(no api.out)" }
+        throw "API did not become ready at $url"
+      } else {
+        Write-Host "API is up at $url"
+      }
+    '''
+  }
+}
+
 
     stage('Run pytest (produce JUnit)') {
       steps {
@@ -169,16 +191,17 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
   }
 
   post {
-    always {
-      bat '''
+   always {
+     bat '''
         if exist api.pid (
-          for /f %%p in (api.pid) do taskkill /PID %%p /F >NUL 2>&1
-        )
-        if exist backend\\docker-compose.db.yml (
-          docker compose -f backend\\docker-compose.db.yml down || docker-compose -f backend\\docker-compose.db.yml down
-        )
-      '''
+        for /f %%p in (api.pid) do taskkill /PID %%p /F >NUL 2>&1
+       )
+         if exist backend\\docker-compose.db.yml (
+         docker compose -f backend\\docker-compose.db.yml down || docker-compose -f backend\\docker-compose.db.yml down || ver >NUL
+       )
+    '''
       archiveArtifacts artifacts: 'report.xml', onlyIfSuccessful: false
-    }
   }
+}
+
 }
