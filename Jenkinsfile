@@ -111,18 +111,18 @@ pipeline {
         junit 'report.xml'
       }
     }
-
     stage('Get token & upload') {
-      steps {
-        script {
-          bat '''
-            curl -X POST "%BACKEND_BASE%/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
-            type token.json
-          '''
-        }
-      }
+    steps {
+     script {
+        bat '''
+        curl -X POST "http://127.0.0.1:8001/api/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
+        type token.json
+      '''
     }
   }
+}
+
+
 
   post {
     always {
