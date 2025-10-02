@@ -3,18 +3,18 @@ pipeline {
   options { timestamps() }
 
   environment {
-    // Ensure system dirs, PowerShell, Docker & Python are on PATH (order matters)
     PATH = "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313\\Scripts;${PATH}"
     POWERSHELL_EXE = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-
-    BACKEND_BASE = 'http://127.0.0.1:8001'  // CHANGED: from localhost to 127.0.0.1
+    BACKEND_BASE = 'http://127.0.0.1:8001'
     PROJECT_ID   = '1'
     API_USER     = credentials('testboard_user_email')
     API_PASS     = credentials('testboard_user_password')
   }
 
   stages {
-    stage('Checkout') { steps { checkout scm } }
+    stage('Checkout') {
+      steps { checkout scm }
+    }
 
     stage('Create venv & install deps') {
       steps {
@@ -45,9 +45,7 @@ pipeline {
 
     stage('Write backend .env') {
       steps {
-        writeFile file: 'backend/.env', text: """
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
-""".trim()
+        writeFile file: 'backend/.env', text: """DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard""".trim()
       }
     }
 
@@ -77,7 +75,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
           dir alembic
           ..\\.venv\\Scripts\\alembic.exe -c alembic.ini current || ver >NUL
           ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
-         popd
+          popd
         '''
       }
     }
@@ -86,47 +84,36 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       steps {
         bat 'del /Q api.pid api.listen.pid api.out api.err 2>NUL'
         powershell '''
-        $port = 8001
-
-        # Free port if needed
-        $lines = cmd /c "netstat -ano | findstr :$port"
-        if ($lines) {
-          Write-Host "Port $port is in use. Offending PIDs:"
-          ($lines | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -Unique) | ForEach-Object {
-            if ($_ -match "^[0-9]+$") { Write-Host "Killing PID $_"; cmd /c "taskkill /PID $_ /F" | Out-Null }
+          $port = 8001
+          $lines = cmd /c "netstat -ano | findstr :$port"
+          if ($lines) {
+            Write-Host "Port $port is in use. Offending PIDs:"
+            ($lines | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -Unique) | ForEach-Object {
+              if ($_ -match "^[0-9]+$") { Write-Host "Killing PID $_"; cmd /c "taskkill /PID $_ /F" | Out-Null }
+            }
           }
-        }
-
-        $py   = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
-        $wd   = "$env:WORKSPACE\\backend"
-        $args = "-m uvicorn app.main:app --host 127.0.0.1 --port $port --env-file .env"
-        $logOut = Join-Path $env:WORKSPACE "api.out"
-        $logErr = Join-Path $env:WORKSPACE "api.err"
-
-        $p = Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $wd `
-                           -WindowStyle Hidden -PassThru `
-                           -RedirectStandardOutput $logOut -RedirectStandardError $logErr
-        Set-Content (Join-Path $env:WORKSPACE "api.pid") $p.Id
-        Write-Host "API launcher PID: $($p.Id) on port $port"
-        Start-Sleep -Seconds 5
-
-        # Confirm it didn't crash immediately
-        try { Get-Process -Id $p.Id | Out-Null } catch {
-          Write-Host "Process died at launch. api.err tail:"; if(Test-Path $logErr){ Get-Content $logErr -Tail 80 }
-          throw "Uvicorn exited during startup."
-        }
-
-        # Find the actual listening PID and store it too
-        $listenPid = (cmd /c "netstat -ano | findstr :$port | findstr LISTENING" | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -First 1)
-        if ($listenPid) {
-          Set-Content (Join-Path $env:WORKSPACE "api.listen.pid") $listenPid
-          Write-Host "Listening PID on :$port is $listenPid"
-        } else {
-          Write-Host "No LISTENING line yet for :$port"
-        }
-
-        Write-Host "Netstat after start:"; cmd /c "netstat -ano | findstr :$port" | Write-Host
-      '''
+          $py = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
+          $wd = "$env:WORKSPACE\\backend"
+          $args = "-m uvicorn app.main:app --host 127.0.0.1 --port $port --env-file .env"
+          $logOut = Join-Path $env:WORKSPACE "api.out"
+          $logErr = Join-Path $env:WORKSPACE "api.err"
+          $p = Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $wd -WindowStyle Hidden -PassThru -RedirectStandardOutput $logOut -RedirectStandardError $logErr
+          Set-Content (Join-Path $env:WORKSPACE "api.pid") $p.Id
+          Write-Host "API launcher PID: $($p.Id) on port $port"
+          Start-Sleep -Seconds 5
+          try { Get-Process -Id $p.Id | Out-Null } catch {
+            Write-Host "Process died at launch. api.err tail:"; if(Test-Path $logErr){ Get-Content $logErr -Tail 80 }
+            throw "Uvicorn exited during startup."
+          }
+          $listenPid = (cmd /c "netstat -ano | findstr :$port | findstr LISTENING" | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -First 1)
+          if ($listenPid) {
+            Set-Content (Join-Path $env:WORKSPACE "api.listen.pid") $listenPid
+            Write-Host "Listening PID on :$port is $listenPid"
+          } else {
+            Write-Host "No LISTENING line yet for :$port"
+          }
+          Write-Host "Netstat after start:"; cmd /c "netstat -ano | findstr :$port" | Write-Host
+        '''
       }
     }
 
@@ -135,24 +122,21 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
         powershell '''
           Write-Host "=== Testing API Connection ==="
           Start-Sleep -Seconds 3
-
-          Write-Host "`n1. Testing with Invoke-WebRequest to 127.0.0.1:8001"
+          Write-Host "`n1. Testing 127.0.0.1:8001/docs"
           try {
             $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8001/docs" -UseBasicParsing -TimeoutSec 5
             Write-Host "SUCCESS: Status $($resp.StatusCode)"
           } catch {
             Write-Host "FAILED: $($_.Exception.Message)"
           }
-
-          Write-Host "`n2. Testing with Invoke-WebRequest to localhost:8001"
+          Write-Host "`n2. Testing localhost:8001/docs"
           try {
             $resp = Invoke-WebRequest -Uri "http://localhost:8001/docs" -UseBasicParsing -TimeoutSec 5
             Write-Host "SUCCESS: Status $($resp.StatusCode)"
           } catch {
             Write-Host "FAILED: $($_.Exception.Message)"
           }
-
-          Write-Host "`n3. Checking process status"
+          Write-Host "`n3. Process status"
           $pidFile = Join-Path $env:WORKSPACE "api.listen.pid"
           if (Test-Path $pidFile) {
             $pid = Get-Content $pidFile
@@ -160,61 +144,51 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
               $proc = Get-Process -Id $pid -ErrorAction Stop
               Write-Host "Process $pid is running: $($proc.ProcessName)"
             } catch {
-              Write-Host "Process $pid NOT found - API may have crashed"
+              Write-Host "Process $pid NOT found"
             }
           }
-
-          Write-Host "`n4. Current netstat for port 8001:"
+          Write-Host "`n4. Port status"
           cmd /c "netstat -ano | findstr :8001"
-
           Write-Host "`n5. Last 10 lines of api.err"
           $errFile = Join-Path $env:WORKSPACE "api.err"
-          if (Test-Path $errFile) {
-            Get-Content $errFile -Tail 10
-          } else {
-            Write-Host "No api.err file found"
-          }
+          if (Test-Path $errFile) { Get-Content $errFile -Tail 10 } else { Write-Host "No api.err" }
         '''
       }
     }
 
     stage('Wait for API') {
-  options { timeout(time: 90, unit: 'SECONDS') }
-  steps {
-    powershell '''
-      $url    = "http://127.0.0.1:8001/docs"
-      $logOut = Join-Path $env:WORKSPACE "api.out"
-      $logErr = Join-Path $env:WORKSPACE "api.err"
-
-      $ok = $false
-      for($i=1; $i -le 90; $i++){
-        try {
-          (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2) | Out-Null
-          Write-Host "API is up at $url"
-          $ok = $true; break
-        } catch {
-          if ($i % 5 -eq 0) {
-            Write-Host ("Still waiting... {0}s" -f $i)
-            Write-Host "netstat:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
-            if (Test-Path $logErr) { Write-Host "api.err (last 5):"; Get-Content $logErr -Tail 5 }
-          } else {
-            Write-Host -NoNewline "."
+      options { timeout(time: 90, unit: 'SECONDS') }
+      steps {
+        powershell '''
+          $url = "http://127.0.0.1:8001/docs"
+          $logOut = Join-Path $env:WORKSPACE "api.out"
+          $logErr = Join-Path $env:WORKSPACE "api.err"
+          $ok = $false
+          for($i=1; $i -le 90; $i++){
+            try {
+              (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2) | Out-Null
+              Write-Host "API is up at $url"
+              $ok = $true; break
+            } catch {
+              if ($i % 5 -eq 0) {
+                Write-Host ("Still waiting... {0}s" -f $i)
+                Write-Host "netstat:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+                if (Test-Path $logErr) { Write-Host "api.err (last 5):"; Get-Content $logErr -Tail 5 }
+              } else {
+                Write-Host -NoNewline "."
+              }
+              Start-Sleep -Seconds 1
+            }
           }
-          Start-Sleep -Seconds 1
-        }
+          if(-not $ok){
+            Write-Host "`n---- api.err ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err)" }
+            Write-Host "---- api.out ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out)" }
+            Write-Host "---- port status ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+            throw "API did not become ready at $url"
+          }
+        '''
       }
-
-      if(-not $ok){
-        Write-Host "`n---- api.err (last 100) ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err)" }
-        Write-Host "---- api.out (last 100) ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out)" }
-        Write-Host "---- who uses :8001 ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
-        throw "API did not become ready at $url"
-      }
-    '''
-  }
-}
-
-
+    }
 
     stage('Smoke: auth') {
       steps {
@@ -222,7 +196,6 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
           $base = $env:BACKEND_BASE
           Write-Host "Probing $base/docs..."
           (Invoke-WebRequest -UseBasicParsing "$base/docs").StatusCode | Out-Null
-
           $body = @{ email = $env:API_USER; password = $env:API_PASS } | ConvertTo-Json
           $resp = Invoke-RestMethod -Uri "$base/auth/login" -Method Post -ContentType "application/json" -Body $body
           if (-not $resp.access_token) { throw "No access_token in response" }
@@ -290,7 +263,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
     always {
       powershell '''
         $listen = Join-Path $env:WORKSPACE "api.listen.pid"
-        $pid    = Join-Path $env:WORKSPACE "api.pid"
+        $pid = Join-Path $env:WORKSPACE "api.pid"
         if (Test-Path $listen) { $toKill = Get-Content $listen -ErrorAction SilentlyContinue }
         if (-not $toKill -and (Test-Path $pid)) { $toKill = Get-Content $pid -ErrorAction SilentlyContinue }
         if ($toKill) {
