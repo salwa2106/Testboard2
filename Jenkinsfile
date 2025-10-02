@@ -117,24 +117,37 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
 
 
     stage('Wait for API') {
-    steps {
-     powershell '''
+     steps {
+      powershell '''
       $url = "http://localhost:8001/docs"
       $ok = $false
       for($i=0; $i -lt 60; $i++){
-        try { Invoke-WebRequest -UseBasicParsing $url | Out-Null; $ok = $true; break }
-        catch { Start-Sleep -Seconds 1; if($i % 10 -eq 0){ Write-Host "Waiting for API... ($i s)" } }
+        try {
+          (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2) | Out-Null
+          Write-Host "API is up at $url"
+          $ok = $true
+          break
+        } catch {
+          if ($i % 5 -eq 0) {
+            Write-Host "Still waiting... ($i s)";
+            Write-Host "netstat snapshot:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+          }
+          Start-Sleep -Seconds 1
+        }
       }
       if(-not $ok){
-        Write-Host "---- api.err (last 80) ----"; if(Test-Path api.err){ Get-Content api.err -Tail 80 } else { Write-Host "(no api.err)" }
-        Write-Host "---- api.out (last 80) ----"; if(Test-Path api.out){ Get-Content api.out -Tail 80 } else { Write-Host "(no api.out)" }
+        Write-Host "---- api.err (last 100 lines) ----"
+        if (Test-Path api.err) { Get-Content api.err -Tail 100 } else { Write-Host "(no api.err yet)" }
+        Write-Host "---- api.out (last 100 lines) ----"
+        if (Test-Path api.out) { Get-Content api.out -Tail 100 } else { Write-Host "(no api.out yet)" }
+        Write-Host "---- who uses :8001 ----"
+        cmd /c "netstat -ano | findstr :8001" | Write-Host
         throw "API did not become ready at $url"
-      } else {
-        Write-Host "API is up at $url"
       }
     '''
   }
 }
+
 
 
     stage('Run pytest (produce JUnit)') {
