@@ -84,52 +84,52 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
 
     stage('Start API') {
      steps {
-      bat 'del /Q api.pid 2>NUL'
+      bat 'del /Q api.pid api.listen.pid api.out api.err 2>NUL'
       powershell '''
       $port = 8001
 
-      # Free the port if needed
+      # Free port if needed
       $lines = cmd /c "netstat -ano | findstr :$port"
       if ($lines) {
         Write-Host "Port $port is in use. Offending PIDs:"
-        $procIds = ($lines | ForEach-Object { ($_ -split '\\s+')[-1] } | Select-Object -Unique)
-        foreach ($procId in $procIds) {
-          if ($procId -match '^[0-9]+$') {
-            Write-Host "Killing PID $procId"
-            cmd /c "taskkill /PID $procId /F" | Out-Null
-          }
+        ($lines | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -Unique) | ForEach-Object {
+          if ($_ -match "^[0-9]+$") { Write-Host "Killing PID $_"; cmd /c "taskkill /PID $_ /F" | Out-Null }
         }
       }
 
       $py   = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
       $wd   = "$env:WORKSPACE\\backend"
       $args = "-m uvicorn app.main:app --host 0.0.0.0 --port $port --env-file .env"
-
-      # Put logs in WORKSPACE root so later stages can read them
       $logOut = Join-Path $env:WORKSPACE "api.out"
       $logErr = Join-Path $env:WORKSPACE "api.err"
 
-      # Start detached + capture logs
       $p = Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $wd `
                          -WindowStyle Hidden -PassThru `
                          -RedirectStandardOutput $logOut -RedirectStandardError $logErr
-      Set-Content -Path (Join-Path $env:WORKSPACE "api.pid") -Value $p.Id
-      Write-Host "API server started with PID: $($p.Id) on port $port"
-
+      Set-Content (Join-Path $env:WORKSPACE "api.pid") $p.Id
+      Write-Host "API launcher PID: $($p.Id) on port $port"
       Start-Sleep -Seconds 2
-      # Ensure process didn't crash instantly
-      try { Get-Process -Id $p.Id | Out-Null }
-      catch {
-        Write-Host "Process died immediately. api.err tail:"
-        if (Test-Path $logErr) { Get-Content $logErr -Tail 80 }
-        throw "Uvicorn process exited during startup."
+
+      # Confirm it didn’t crash immediately
+      try { Get-Process -Id $p.Id | Out-Null } catch {
+        Write-Host "Process died at launch. api.err tail:"; if(Test-Path $logErr){ Get-Content $logErr -Tail 80 }
+        throw "Uvicorn exited during startup."
       }
 
-      Write-Host "Netstat after start:"
-      cmd /c "netstat -ano | findstr :$port" | Write-Host
+      # Find the actual listening PID and store it too
+      $listenPid = (cmd /c "netstat -ano | findstr :$port | findstr LISTENING" | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -First 1)
+      if ($listenPid) {
+        Set-Content (Join-Path $env:WORKSPACE "api.listen.pid") $listenPid
+        Write-Host "Listening PID on :$port is $listenPid"
+      } else {
+        Write-Host "No LISTENING line yet for :$port"
+      }
+
+      Write-Host "Netstat after start:"; cmd /c "netstat -ano | findstr :$port" | Write-Host
     '''
   }
 }
+
 
 stage('Smoke check API') {
   steps {
@@ -144,7 +144,7 @@ stage('Smoke check API') {
   }
 }
 stage('Wait for API') {
-  options { timeout(time: 90, unit: 'SECONDS') }   // hard cap
+  options { timeout(time: 90, unit: 'SECONDS') }
   steps {
     powershell '''
       $url    = "http://localhost:8001/docs"
@@ -152,31 +152,34 @@ stage('Wait for API') {
       $logErr = Join-Path $env:WORKSPACE "api.err"
 
       $ok = $false
-      for($i=0; $i -lt 60; $i++){
+      for($i=1; $i -le 90; $i++){
         try {
           (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2) | Out-Null
           Write-Host "API is up at $url"
-          $ok = $true
-          break
+          $ok = $true; break
         } catch {
           if ($i % 5 -eq 0) {
-            Write-Host ("Still waiting... ({0}s)" -f $i)
-            Write-Host "netstat snapshot:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
-            if (Test-Path $logErr) { Write-Host "api.err (last 5 lines):"; Get-Content $logErr -Tail 5 }
+            Write-Host ("Still waiting... {0}s" -f $i)
+            Write-Host "netstat:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+            if (Test-Path $logErr) { Write-Host "api.err (last 5):"; Get-Content $logErr -Tail 5 }
+          } else {
+            Write-Host -NoNewline "."
           }
           Start-Sleep -Seconds 1
         }
       }
 
       if(-not $ok){
-        Write-Host "---- api.err (last 100) ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err yet)" }
-        Write-Host "---- api.out (last 100) ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out yet)" }
+        Write-Host "`n---- api.err (last 100) ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err)" }
+        Write-Host "---- api.out (last 100) ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out)" }
         Write-Host "---- who uses :8001 ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
         throw "API did not become ready at $url"
       }
     '''
   }
 }
+
+
 
     stage('Run pytest (produce JUnit)') {
       steps {
@@ -231,19 +234,24 @@ stage('Wait for API') {
       }
     }
   }
-
   post {
-   always {
-     bat '''
-        if exist api.pid (
-        for /f %%p in (api.pid) do taskkill /PID %%p /F >NUL 2>&1
-       )
-         if exist backend\\docker-compose.db.yml (
-         docker compose -f backend\\docker-compose.db.yml down || docker-compose -f backend\\docker-compose.db.yml down || ver >NUL
-       )
+  always {
+    powershell '''
+      $listen = Join-Path $env:WORKSPACE "api.listen.pid"
+      $pid    = Join-Path $env:WORKSPACE "api.pid"
+      if (Test-Path $listen) { $toKill = Get-Content $listen -ErrorAction SilentlyContinue }
+      if (-not $toKill -and (Test-Path $pid)) { $toKill = Get-Content $pid -ErrorAction SilentlyContinue }
+      if ($toKill) {
+        Write-Host "Stopping API PID $toKill"
+        cmd /c "taskkill /PID $toKill /F" | Out-Null
+      }
     '''
-      archiveArtifacts artifacts: 'report.xml', onlyIfSuccessful: false
+    bat '''
+      if exist backend\\docker-compose.db.yml (
+        docker compose -f backend\\docker-compose.db.yml down || docker-compose -f backend\\docker-compose.db.yml down || ver >NUL
+      )
+    '''
+    archiveArtifacts artifacts: 'api.out, api.err, report.xml', onlyIfSuccessful: false
   }
 }
-
 }
