@@ -82,67 +82,85 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       }
     }
 
-    stage('Start API') {
-     steps {
-      bat 'del /Q api.pid api.listen.pid api.out api.err 2>NUL'
-      powershell '''
-      $port = 8001
+stage('Start API') {
+ steps {
+  bat 'del /Q api.pid api.listen.pid api.out api.err 2>NUL'
+  powershell '''
+  $port = 8001
 
-      # Free port if needed
-      $lines = cmd /c "netstat -ano | findstr :$port"
-      if ($lines) {
-        Write-Host "Port $port is in use. Offending PIDs:"
-        ($lines | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -Unique) | ForEach-Object {
-          if ($_ -match "^[0-9]+$") { Write-Host "Killing PID $_"; cmd /c "taskkill /PID $_ /F" | Out-Null }
-        }
-      }
-
-      $py   = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
-      $wd   = "$env:WORKSPACE\\backend"
-      $args = "-m uvicorn app.main:app --host 0.0.0.0 --port $port --env-file .env"
-      $logOut = Join-Path $env:WORKSPACE "api.out"
-      $logErr = Join-Path $env:WORKSPACE "api.err"
-
-      $p = Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $wd `
-                         -WindowStyle Hidden -PassThru `
-                         -RedirectStandardOutput $logOut -RedirectStandardError $logErr
-      Set-Content (Join-Path $env:WORKSPACE "api.pid") $p.Id
-      Write-Host "API launcher PID: $($p.Id) on port $port"
-      Start-Sleep -Seconds 2
-
-      # Confirm it didn’t crash immediately
-      try { Get-Process -Id $p.Id | Out-Null } catch {
-        Write-Host "Process died at launch. api.err tail:"; if(Test-Path $logErr){ Get-Content $logErr -Tail 80 }
-        throw "Uvicorn exited during startup."
-      }
-
-      # Find the actual listening PID and store it too
-      $listenPid = (cmd /c "netstat -ano | findstr :$port | findstr LISTENING" | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -First 1)
-      if ($listenPid) {
-        Set-Content (Join-Path $env:WORKSPACE "api.listen.pid") $listenPid
-        Write-Host "Listening PID on :$port is $listenPid"
-      } else {
-        Write-Host "No LISTENING line yet for :$port"
-      }
-
-      Write-Host "Netstat after start:"; cmd /c "netstat -ano | findstr :$port" | Write-Host
-    '''
+  # Free port if needed
+  $lines = cmd /c "netstat -ano | findstr :$port"
+  if ($lines) {
+    Write-Host "Port $port is in use. Offending PIDs:"
+    ($lines | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -Unique) | ForEach-Object {
+      if ($_ -match "^[0-9]+$") { Write-Host "Killing PID $_"; cmd /c "taskkill /PID $_ /F" | Out-Null }
+    }
   }
+
+  $py   = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
+  $wd   = "$env:WORKSPACE\\backend"
+  $args = "-m uvicorn app.main:app --host 127.0.0.1 --port $port --env-file .env"  # Changed to 127.0.0.1
+  $logOut = Join-Path $env:WORKSPACE "api.out"
+  $logErr = Join-Path $env:WORKSPACE "api.err"
+
+  $p = Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $wd `
+                     -WindowStyle Hidden -PassThru `
+                     -RedirectStandardOutput $logOut -RedirectStandardError $logErr
+  Set-Content (Join-Path $env:WORKSPACE "api.pid") $p.Id
+  Write-Host "API launcher PID: $($p.Id) on port $port"
+  Start-Sleep -Seconds 2
+
+  # Confirm it didn't crash immediately
+  try { Get-Process -Id $p.Id | Out-Null } catch {
+    Write-Host "Process died at launch. api.err tail:"; if(Test-Path $logErr){ Get-Content $logErr -Tail 80 }
+    throw "Uvicorn exited during startup."
+  }
+
+  # Find the actual listening PID and store it too
+  $listenPid = (cmd /c "netstat -ano | findstr :$port | findstr LISTENING" | ForEach-Object { ($_ -split "\\s+")[-1] } | Select-Object -First 1)
+  if ($listenPid) {
+    Set-Content (Join-Path $env:WORKSPACE "api.listen.pid") $listenPid
+    Write-Host "Listening PID on :$port is $listenPid"
+  } else {
+    Write-Host "No LISTENING line yet for :$port"
+  }
+
+  Write-Host "Netstat after start:"; cmd /c "netstat -ano | findstr :$port" | Write-Host
+'''
+}
 }
 
-
-stage('Smoke check API') {
+stage('Test API Connection') {
   steps {
     powershell '''
+      Write-Host "Testing direct connection to API..."
+      Start-Sleep -Seconds 3
+
+      # Try multiple methods
+      Write-Host "`n1. Testing with Invoke-WebRequest to 127.0.0.1:8001"
       try {
-        (Invoke-WebRequest -UseBasicParsing "http://localhost:8001/docs" -TimeoutSec 2) | Out-Null
-        Write-Host "Smoke check OK (docs reachable)"
+        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8001/docs" -UseBasicParsing -TimeoutSec 5
+        Write-Host "SUCCESS: Status $($resp.StatusCode)"
       } catch {
-        Write-Host "Smoke check not ready; moving to full wait..."
+        Write-Host "FAILED: $_"
       }
+
+      Write-Host "`n2. Testing with Invoke-WebRequest to localhost:8001"
+      try {
+        $resp = Invoke-WebRequest -Uri "http://localhost:8001/docs" -UseBasicParsing -TimeoutSec 5
+        Write-Host "SUCCESS: Status $($resp.StatusCode)"
+      } catch {
+        Write-Host "FAILED: $_"
+      }
+
+      Write-Host "`n3. Current netstat for port 8001:"
+      cmd /c "netstat -ano | findstr :8001"
     '''
   }
 }
+
+
+
 stage('Wait for API') {
   options { timeout(time: 90, unit: 'SECONDS') }
   steps {
