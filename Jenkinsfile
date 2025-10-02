@@ -143,17 +143,14 @@ stage('Smoke check API') {
     '''
   }
 }
+stage('Wait for API') {
+  options { timeout(time: 90, unit: 'SECONDS') }   // hard cap
+  steps {
+    powershell '''
+      $url    = "http://localhost:8001/docs"
+      $logOut = Join-Path $env:WORKSPACE "api.out"
+      $logErr = Join-Path $env:WORKSPACE "api.err"
 
-
-
-
-
-
-    stage('Wait for API') {
-     options { timeout(time: 90, unit: 'SECONDS') }   // hard cap so it never “hangs”
-      steps {
-       powershell '''
-      $url = "http://localhost:8001/docs"
       $ok = $false
       for($i=0; $i -lt 60; $i++){
         try {
@@ -165,23 +162,21 @@ stage('Smoke check API') {
           if ($i % 5 -eq 0) {
             Write-Host ("Still waiting... ({0}s)" -f $i)
             Write-Host "netstat snapshot:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
-            if (Test-Path api.err) { Write-Host "api.err (last 5):"; Get-Content api.err -Tail 5 }
+            if (Test-Path $logErr) { Write-Host "api.err (last 5 lines):"; Get-Content $logErr -Tail 5 }
           }
           Start-Sleep -Seconds 1
         }
       }
+
       if(-not $ok){
-        Write-Host "---- api.err (last 100) ----"; if(Test-Path api.err){ Get-Content api.err -Tail 100 } else { Write-Host "(no api.err yet)" }
-        Write-Host "---- api.out (last 100) ----"; if(Test-Path api.out){ Get-Content api.out -Tail 100 } else { Write-Host "(no api.out yet)" }
+        Write-Host "---- api.err (last 100) ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err yet)" }
+        Write-Host "---- api.out (last 100) ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out yet)" }
         Write-Host "---- who uses :8001 ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
         throw "API did not become ready at $url"
       }
     '''
   }
 }
-
-
-
 
     stage('Run pytest (produce JUnit)') {
       steps {
