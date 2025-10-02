@@ -178,6 +178,22 @@ stage('Wait for API') {
     '''
   }
 }
+stage('Smoke: auth') {
+  steps {
+    powershell '''
+      $base = $env:BACKEND_BASE
+      Write-Host "Probing $base/docs..."
+      (Invoke-WebRequest -UseBasicParsing "$base/docs").StatusCode | Out-Null
+
+      $body = @{ email = $env:API_USER; password = $env:API_PASS } | ConvertTo-Json
+      $resp = Invoke-RestMethod -Uri "$base/auth/login" -Method Post -ContentType "application/json" -Body $body
+      if (-not $resp.access_token) { throw "No access_token in response" }
+      Set-Content -Path "api.token" -Value $resp.access_token
+      Write-Host "Got token. Saved to api.token"
+    '''
+  }
+}
+
 
 
 
