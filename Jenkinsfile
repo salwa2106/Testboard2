@@ -57,14 +57,16 @@ pipeline {
     }
 
     stage('Run migrations') {
-      steps {
-        bat '''
-          if not exist backend\\alembic.ini (echo Missing alembic.ini & exit /b 1)
-          cd backend
-          ..\\. venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
-        '''
-      }
-    }
+    steps {
+      bat '''
+      if not exist backend\\alembic.ini (echo Missing alembic.ini & exit /b 1)
+      cd backend
+      ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
+    '''
+  }
+}
+
+
 
     stage('Start API') {
       steps {
