@@ -57,16 +57,14 @@ pipeline {
     }
 
     stage('Run migrations') {
-    steps {
-      bat '''
-      if not exist backend\\alembic.ini (echo Missing alembic.ini & exit /b 1)
-      cd backend
-      ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
-    '''
-  }
-}
-
-
+      steps {
+        bat '''
+          if not exist backend\\alembic.ini (echo Missing alembic.ini & exit /b 1)
+          cd backend
+          ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
+        '''
+      }
+    }
 
     stage('Start API') {
       steps {
@@ -95,7 +93,6 @@ pipeline {
             sleep(time: 1, unit: "SECONDS")
           }
           if (!ready) {
-            bat 'type api.err || echo No api.err file'
             error("API did not become ready")
           }
         }
@@ -111,18 +108,16 @@ pipeline {
         junit 'report.xml'
       }
     }
+
     stage('Get token & upload') {
-    steps {
-     script {
+      steps {
         bat '''
-        curl -X POST "http://127.0.0.1:8001/api/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
-        type token.json
-      '''
+          curl -X POST "http://127.0.0.1:8001/api/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
+          type token.json
+        '''
+      }
     }
   }
-}
-
-
 
   post {
     always {
