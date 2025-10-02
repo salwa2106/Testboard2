@@ -20,9 +20,9 @@ pipeline {
         bat '''
           python --version
           python -m venv .venv
-          "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pip install --upgrade pip
-          "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pip install -r requirements.txt
-          "%WORKSPACE%\\.venv\\Scripts\\pip.exe" uninstall -y app || ver >NUL
+          .venv\\Scripts\\python.exe -m pip install --upgrade pip
+          .venv\\Scripts\\python.exe -m pip install -r requirements.txt
+          .venv\\Scripts\\pip.exe uninstall -y app || ver >NUL
         '''
       }
     }
@@ -50,7 +50,7 @@ pipeline {
     stage('Wait for Database') {
       steps {
         script {
-          echo "Waiting for PostgreSQL database to initialize..."
+          echo "Waiting for PostgreSQL..."
           sleep(time: 30, unit: "SECONDS")
         }
       }
@@ -59,38 +59,44 @@ pipeline {
     stage('Run migrations') {
       steps {
         bat '''
-          if not exist backend\\alembic.ini (echo "backend\\alembic.ini missing" & exit /b 1)
-          pushd backend
-          ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
-          popd
+          if not exist backend\\alembic.ini (echo Missing alembic.ini & exit /b 1)
+          cd backend
+          ..\\. venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
         '''
       }
     }
 
     stage('Start API') {
       steps {
-        bat 'del /Q api.pid api.out api.err 2>NUL'
         bat '''
-          start /B "" "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --env-file backend\\.env > api.out 2> api.err
-          timeout /t 5 /nobreak
-          echo API started
+          del /Q api.pid api.out api.err 2>NUL
+          cd backend
+          start /B "" "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --env-file .env
+          cd ..
+          ping 127.0.0.1 -n 6 > nul
         '''
       }
     }
 
     stage('Wait for API') {
       steps {
-        bat '''
-          for /L %%i in (1,1,30) do (
-            curl -s http://127.0.0.1:8001/docs >NUL 2>&1 && echo API is ready && goto :ready
-            echo Waiting...
-            timeout /t 1 /nobreak >NUL
-          )
-          echo API did not start in time
-          type api.err
-          exit /b 1
-          :ready
-        '''
+        script {
+          def ready = false
+          for (int i = 1; i <= 30; i++) {
+            def result = bat(script: 'curl -s http://127.0.0.1:8001/docs > nul 2>&1', returnStatus: true)
+            if (result == 0) {
+              echo "API is ready!"
+              ready = true
+              break
+            }
+            echo "Waiting for API... attempt ${i}/30"
+            sleep(time: 1, unit: "SECONDS")
+          }
+          if (!ready) {
+            bat 'type api.err || echo No api.err file'
+            error("API did not become ready")
+          }
+        }
       }
     }
 
@@ -98,26 +104,30 @@ pipeline {
       steps {
         bat '''
           cd backend
-          "%WORKSPACE%\\.venv\\Scripts\\python.exe" -m pytest --junitxml=../report.xml || exit /b 0
+          ..\\.venv\\Scripts\\python.exe -m pytest --junitxml=..\\report.xml || exit /b 0
         '''
         junit 'report.xml'
       }
     }
 
-    stage('Get API token') {
+    stage('Get token & upload') {
       steps {
-        bat '''
-          curl -X POST "http://127.0.0.1:8001/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
-          type token.json
-        '''
+        script {
+          bat '''
+            curl -X POST "%BACKEND_BASE%/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
+            type token.json
+          '''
+        }
       }
     }
   }
 
   post {
     always {
-      bat 'taskkill /F /FI "WINDOWTITLE eq python.exe" 2>NUL || ver >NUL'
-      bat 'if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL'
+      bat '''
+        for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do taskkill /PID %%a /F 2>NUL
+        if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL
+      '''
     }
   }
 }
