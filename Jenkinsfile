@@ -179,40 +179,42 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
     }
 
     stage('Wait for API') {
-      options { timeout(time: 90, unit: 'SECONDS') }
-      steps {
-        powershell '''
-          $url    = "http://127.0.0.1:8001/docs"  // CHANGED: from localhost to 127.0.0.1
-          $logOut = Join-Path $env:WORKSPACE "api.out"
-          $logErr = Join-Path $env:WORKSPACE "api.err"
+  options { timeout(time: 90, unit: 'SECONDS') }
+  steps {
+    powershell '''
+      $url    = "http://127.0.0.1:8001/docs"
+      $logOut = Join-Path $env:WORKSPACE "api.out"
+      $logErr = Join-Path $env:WORKSPACE "api.err"
 
-          $ok = $false
-          for($i=1; $i -le 90; $i++){
-            try {
-              (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2) | Out-Null
-              Write-Host "API is up at $url"
-              $ok = $true; break
-            } catch {
-              if ($i % 5 -eq 0) {
-                Write-Host ("Still waiting... {0}s" -f $i)
-                Write-Host "netstat:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
-                if (Test-Path $logErr) { Write-Host "api.err (last 5):"; Get-Content $logErr -Tail 5 }
-              } else {
-                Write-Host -NoNewline "."
-              }
-              Start-Sleep -Seconds 1
-            }
+      $ok = $false
+      for($i=1; $i -le 90; $i++){
+        try {
+          (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2) | Out-Null
+          Write-Host "API is up at $url"
+          $ok = $true; break
+        } catch {
+          if ($i % 5 -eq 0) {
+            Write-Host ("Still waiting... {0}s" -f $i)
+            Write-Host "netstat:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+            if (Test-Path $logErr) { Write-Host "api.err (last 5):"; Get-Content $logErr -Tail 5 }
+          } else {
+            Write-Host -NoNewline "."
           }
-
-          if(-not $ok){
-            Write-Host "`n---- api.err (last 100) ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err)" }
-            Write-Host "---- api.out (last 100) ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out)" }
-            Write-Host "---- who uses :8001 ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
-            throw "API did not become ready at $url"
-          }
-        '''
+          Start-Sleep -Seconds 1
+        }
       }
-    }
+
+      if(-not $ok){
+        Write-Host "`n---- api.err (last 100) ----"; if(Test-Path $logErr){ Get-Content $logErr -Tail 100 } else { Write-Host "(no api.err)" }
+        Write-Host "---- api.out (last 100) ----"; if(Test-Path $logOut){ Get-Content $logOut -Tail 100 } else { Write-Host "(no api.out)" }
+        Write-Host "---- who uses :8001 ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+        throw "API did not become ready at $url"
+      }
+    '''
+  }
+}
+
+
 
     stage('Smoke: auth') {
       steps {
