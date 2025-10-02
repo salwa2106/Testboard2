@@ -114,11 +114,26 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
   }
 }
 
+stage('Smoke check API') {
+  steps {
+    powershell '''
+      try {
+        (Invoke-WebRequest -UseBasicParsing "http://localhost:8001/docs" -TimeoutSec 2) | Out-Null
+        Write-Host "Smoke check OK (docs reachable)"
+      } catch {
+        Write-Host "Smoke check not ready yet; moving to full wait..."
+      }
+    '''
+  }
+}
+
+
 
 
     stage('Wait for API') {
-     steps {
-      powershell '''
+     options { timeout(time: 90, unit: 'SECONDS') }   // hard cap so it never “hangs”
+      steps {
+       powershell '''
       $url = "http://localhost:8001/docs"
       $ok = $false
       for($i=0; $i -lt 60; $i++){
@@ -129,24 +144,23 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
           break
         } catch {
           if ($i % 5 -eq 0) {
-            Write-Host "Still waiting... ($i s)";
+            Write-Host ("Still waiting... ({0}s)" -f $i)
             Write-Host "netstat snapshot:"; cmd /c "netstat -ano | findstr :8001" | Write-Host
+            if (Test-Path api.err) { Write-Host "api.err (last 5):"; Get-Content api.err -Tail 5 }
           }
           Start-Sleep -Seconds 1
         }
       }
       if(-not $ok){
-        Write-Host "---- api.err (last 100 lines) ----"
-        if (Test-Path api.err) { Get-Content api.err -Tail 100 } else { Write-Host "(no api.err yet)" }
-        Write-Host "---- api.out (last 100 lines) ----"
-        if (Test-Path api.out) { Get-Content api.out -Tail 100 } else { Write-Host "(no api.out yet)" }
-        Write-Host "---- who uses :8001 ----"
-        cmd /c "netstat -ano | findstr :8001" | Write-Host
+        Write-Host "---- api.err (last 100) ----"; if(Test-Path api.err){ Get-Content api.err -Tail 100 } else { Write-Host "(no api.err yet)" }
+        Write-Host "---- api.out (last 100) ----"; if(Test-Path api.out){ Get-Content api.out -Tail 100 } else { Write-Host "(no api.out yet)" }
+        Write-Host "---- who uses :8001 ----"; cmd /c "netstat -ano | findstr :8001" | Write-Host
         throw "API did not become ready at $url"
       }
     '''
   }
 }
+
 
 
 
