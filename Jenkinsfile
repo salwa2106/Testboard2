@@ -88,28 +88,45 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/testboard
       powershell '''
       $port = 8001
 
-      # Free the port if something is already listening (prevents hangs)
+      # Free the port if needed
       $lines = cmd /c "netstat -ano | findstr :$port"
       if ($lines) {
         Write-Host "Port $port is in use. Offending PIDs:"
         $procIds = ($lines | ForEach-Object { ($_ -split '\\s+')[-1] } | Select-Object -Unique)
         foreach ($procId in $procIds) {
-          Write-Host "Killing PID $procId"
-          cmd /c "taskkill /PID $procId /F" | Out-Null
+          if ($procId -match '^[0-9]+$') {
+            Write-Host "Killing PID $procId"
+            cmd /c "taskkill /PID $procId /F" | Out-Null
+          }
         }
       }
 
-      $py  = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
-      $wd  = "$env:WORKSPACE\\backend"
-      # Working dir is backend → .env is local here
-      $arg = "-m uvicorn app.main:app --host 0.0.0.0 --port $port --env-file .env"
+      $py   = "$env:WORKSPACE\\.venv\\Scripts\\python.exe"
+      $wd   = "$env:WORKSPACE\\backend"
+      $args = "-m uvicorn app.main:app --host 0.0.0.0 --port $port --env-file .env"
 
-      # Detach and capture logs
-      $p = Start-Process -FilePath $py -ArgumentList $arg -WorkingDirectory $wd `
+      # Put logs in WORKSPACE root so later stages can read them
+      $logOut = Join-Path $env:WORKSPACE "api.out"
+      $logErr = Join-Path $env:WORKSPACE "api.err"
+
+      # Start detached + capture logs
+      $p = Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $wd `
                          -WindowStyle Hidden -PassThru `
-                         -RedirectStandardOutput "api.out" -RedirectStandardError "api.err"
-      Set-Content -Path "api.pid" -Value $p.Id
+                         -RedirectStandardOutput $logOut -RedirectStandardError $logErr
+      Set-Content -Path (Join-Path $env:WORKSPACE "api.pid") -Value $p.Id
       Write-Host "API server started with PID: $($p.Id) on port $port"
+
+      Start-Sleep -Seconds 2
+      # Ensure process didn't crash instantly
+      try { Get-Process -Id $p.Id | Out-Null }
+      catch {
+        Write-Host "Process died immediately. api.err tail:"
+        if (Test-Path $logErr) { Get-Content $logErr -Tail 80 }
+        throw "Uvicorn process exited during startup."
+      }
+
+      Write-Host "Netstat after start:"
+      cmd /c "netstat -ano | findstr :$port" | Write-Host
     '''
   }
 }
@@ -121,11 +138,13 @@ stage('Smoke check API') {
         (Invoke-WebRequest -UseBasicParsing "http://localhost:8001/docs" -TimeoutSec 2) | Out-Null
         Write-Host "Smoke check OK (docs reachable)"
       } catch {
-        Write-Host "Smoke check not ready yet; moving to full wait..."
+        Write-Host "Smoke check not ready; moving to full wait..."
       }
     '''
   }
 }
+
+
 
 
 
