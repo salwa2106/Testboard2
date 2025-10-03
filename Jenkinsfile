@@ -29,9 +29,7 @@ pipeline {
 
     stage('Install Allure pytest plugin') {
       steps {
-        bat '''
-          .venv\\Scripts\\pip.exe install allure-pytest
-        '''
+        bat '.venv\\Scripts\\pip.exe install allure-pytest'
       }
     }
 
@@ -59,7 +57,7 @@ pipeline {
       steps {
         script {
           echo "Waiting for PostgreSQL..."
-          sleep(time: 30, unit: "SECONDS")
+          sleep(time: 30, unit: 'SECONDS')
         }
       }
     }
@@ -70,6 +68,14 @@ pipeline {
           if not exist backend\\alembic.ini (echo Missing alembic.ini & exit /b 1)
           cd backend
           ..\\.venv\\Scripts\\alembic.exe -c alembic.ini upgrade head
+        '''
+      }
+    }
+
+    stage('Pre-kill port 8001 (clean start)') {
+      steps {
+        bat '''
+          for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do taskkill /PID %%a /F 2>NUL
         '''
       }
     }
@@ -92,22 +98,16 @@ pipeline {
           def ready = false
           for (int i = 1; i <= 30; i++) {
             def result = bat(script: 'curl -s http://127.0.0.1:8001/docs > nul 2>&1', returnStatus: true)
-            if (result == 0) {
-              echo "API is ready!"
-              ready = true
-              break
-            }
+            if (result == 0) { echo "API is ready!"; ready = true; break }
             echo "Waiting for API... attempt ${i}/30"
-            sleep(time: 1, unit: "SECONDS")
+            sleep(time: 1, unit: 'SECONDS')
           }
-          if (!ready) {
-            error("API did not become ready")
-          }
+          if (!ready) { error('API did not become ready') }
         }
       }
     }
 
-    stage('Run pytest') {
+    stage('Run pytest (JUnit)') {
       steps {
         bat '''
           cd backend
@@ -117,13 +117,45 @@ pipeline {
       }
     }
 
-    // === NEW: run pytest again to produce Allure results ===
-    stage('Run pytest (Allure results)') {
+    stage('Login (get API token)') {
+      steps {
+        powershell '''
+          $body = @{ email = "${API_USER}"; password = "${API_PASS}" } | ConvertTo-Json -Compress
+          $resp = Invoke-RestMethod -Method Post -Uri "${env.BACKEND_BASE}/api/auth/login" -ContentType "application/json" -Body $body
+          if (-not $resp.access_token) { throw "Login failed: no access_token in response" }
+          Set-Content -Path token.txt -Value $resp.access_token
+          Write-Host "Token saved to token.txt"
+        '''
+      }
+    }
+
+    stage('Create CI Run in TestBoard') {
       steps {
         bat '''
-          cd backend
-          ..\\.venv\\Scripts\\pytest --maxfail=1 --disable-warnings -q --alluredir=..\\allure-results || exit /b 0
+          set /p TOKEN=<token.txt
+          echo {"project_id": %PROJECT_ID%, "triggered_by_ci": true} > run.json
+          curl -s -X POST "%BACKEND_BASE%/api/runs" ^
+            -H "Content-Type: application/json" ^
+            -H "Authorization: Bearer %TOKEN%" ^
+            --data @run.json -o run_resp.json
+          type run_resp.json
         '''
+        powershell '''
+          $rid = (Get-Content run_resp.json | ConvertFrom-Json).id
+          if (-not $rid) { throw "Failed to parse run id from run_resp.json" }
+          Set-Content -Path run_id.txt -Value $rid
+          Write-Host "RUN_ID: $rid"
+        '''
+      }
+    }
+
+    stage('Run pytest (Allure results)') {
+      steps {
+        bat """
+          set PYTHONPATH=%WORKSPACE%\\backend
+          cd backend
+          ..\\.venv\\Scripts\\python.exe -m pytest --maxfail=1 --disable-warnings -q --alluredir=..\\allure-results || exit /b 0
+        """
       }
       post {
         always {
@@ -132,25 +164,21 @@ pipeline {
       }
     }
 
-    // === NEW: publish Allure report (Allure Jenkins plugin required) ===
     stage('Publish Allure Report') {
       steps {
         allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
       }
     }
-
-    stage('Get token & upload') {
-      steps {
-        bat '''
-          curl -X POST "http://127.0.0.1:8001/api/auth/login" -H "Content-Type: application/json" -d "{\\"email\\":\\"%API_USER%\\",\\"password\\":\\"%API_PASS%\\"}" -o token.json
-          type token.json
-        '''
-      }
-    }
-  }
+  } // end stages
 
   post {
     always {
+      script {
+        if (fileExists('run_id.txt')) {
+          def rid = readFile('run_id.txt').trim()
+          echo "TestBoard RUN_ID: ${rid}"
+        }
+      }
       bat '''
         for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do taskkill /PID %%a /F 2>NUL
         if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL
