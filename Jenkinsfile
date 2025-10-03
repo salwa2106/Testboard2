@@ -27,6 +27,14 @@ pipeline {
       }
     }
 
+    stage('Install Allure pytest plugin') {
+      steps {
+        bat '''
+          .venv\\Scripts\\pip.exe install allure-pytest
+        '''
+      }
+    }
+
     stage('Ensure DB running') {
       steps {
         bat '''
@@ -106,6 +114,28 @@ pipeline {
           ..\\.venv\\Scripts\\python.exe -m pytest --junitxml=..\\report.xml || exit /b 0
         '''
         junit 'report.xml'
+      }
+    }
+
+    // === NEW: run pytest again to produce Allure results ===
+    stage('Run pytest (Allure results)') {
+      steps {
+        bat '''
+          cd backend
+          ..\\.venv\\Scripts\\pytest --maxfail=1 --disable-warnings -q --alluredir=..\\allure-results || exit /b 0
+        '''
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'allure-results/**', allowEmptyArchive: true
+        }
+      }
+    }
+
+    // === NEW: publish Allure report (Allure Jenkins plugin required) ===
+    stage('Publish Allure Report') {
+      steps {
+        allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
       }
     }
 
