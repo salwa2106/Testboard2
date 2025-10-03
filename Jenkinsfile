@@ -3,7 +3,7 @@ pipeline {
   options { timestamps() }
 
   environment {
-    PATH = "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313\\Scripts;${PATH}"
+    PATH         = "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313;C:\\Users\\nasal\\AppData\\Local\\Programs\\Python\\Python313\\Scripts;${PATH}"
     BACKEND_BASE = 'http://127.0.0.1:8001'
     PROJECT_ID   = '1'
     API_USER     = credentials('testboard_user_email')
@@ -73,16 +73,15 @@ pipeline {
     }
 
     stage('Pre-kill port 8001 (clean start)') {
-  steps {
-    bat '''
-      for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
-        taskkill /PID %%a /F 2>NUL || ver >NUL
-      )
-      ver >NUL
-    '''
-  }
-}
-
+      steps {
+        bat '''
+          for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
+            taskkill /PID %%a /F 2>NUL || ver >NUL
+          )
+          ver >NUL
+        '''
+      }
+    }
 
     stage('Start API') {
       steps {
@@ -102,7 +101,11 @@ pipeline {
           def ready = false
           for (int i = 1; i <= 30; i++) {
             def result = bat(script: 'curl -s http://127.0.0.1:8001/docs > nul 2>&1', returnStatus: true)
-            if (result == 0) { echo "API is ready!"; ready = true; break }
+            if (result == 0) {
+              echo "API is ready!"
+              ready = true
+              break
+            }
             echo "Waiting for API... attempt ${i}/30"
             sleep(time: 1, unit: 'SECONDS')
           }
@@ -124,8 +127,8 @@ pipeline {
     stage('Login (get API token)') {
       steps {
         powershell '''
-          $body = @{ email = "${API_USER}"; password = "${API_PASS}" } | ConvertTo-Json -Compress
-          $resp = Invoke-RestMethod -Method Post -Uri "${env.BACKEND_BASE}/api/auth/login" -ContentType "application/json" -Body $body
+          $body = @{ email = "$env:API_USER"; password = "$env:API_PASS" } | ConvertTo-Json -Compress
+          $resp = Invoke-RestMethod -Method Post -Uri "$($env:BACKEND_BASE)/api/auth/login" -ContentType "application/json" -Body $body
           if (-not $resp.access_token) { throw "Login failed: no access_token in response" }
           Set-Content -Path token.txt -Value $resp.access_token
           Write-Host "Token saved to token.txt"
@@ -164,16 +167,12 @@ pipeline {
       post {
         always {
           archiveArtifacts artifacts: 'allure-results/**', allowEmptyArchive: true
+          // Publish Allure even if later stages fail
+          allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
         }
       }
     }
-
-    stage('Publish Allure Report') {
-      steps {
-        allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
-      }
-    }
-  } // end stages
+  }
 
   post {
     always {
@@ -184,12 +183,11 @@ pipeline {
         }
       }
       bat '''
-  for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
-    taskkill /PID %%a /F 2>NUL || ver >NUL
-  )
-  if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL
-'''
-
+        for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
+          taskkill /PID %%a /F 2>NUL || ver >NUL
+        )
+        if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL
+      '''
     }
   }
 }
