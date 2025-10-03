@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from app.core.config import settings
 from app.api.routes.auth import router as auth_router
 from app.api.routes.projects import router as projects_router
@@ -8,6 +10,7 @@ from app.api.routes.cases import router as cases_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.ingest import router as ingest_router
 from app.api.deps import get_current_user
+from app.db.session import get_db
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -22,6 +25,18 @@ app.add_middleware(
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+@app.get("/health/db")
+async def health_check_db(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
 
 @app.get("/me")
 async def me(user=Depends(get_current_user)):
