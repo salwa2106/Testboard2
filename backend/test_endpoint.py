@@ -1,19 +1,12 @@
-import asyncio
+import pytest
 import httpx
 
 
-async def test():
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get("http://127.0.0.1:8000/health")
-            print(f"Health endpoint: {response.status_code} - {response.text}")
+@pytest.mark.asyncio
+async def test_health_endpoints():
+    async with httpx.AsyncClient() as client:
+        response = await client.get("http://127.0.0.1:8001/health")
+        assert response.status_code == 200
 
-            response = await client.get("http://127.0.0.1:8000/health/db")
-            print(f"DB Health endpoint: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-asyncio.run(test())
+        response = await client.get("http://127.0.0.1:8001/health/db")
+        assert response.status_code == 200
