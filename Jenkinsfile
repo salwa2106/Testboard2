@@ -73,12 +73,16 @@ pipeline {
     }
 
     stage('Pre-kill port 8001 (clean start)') {
-      steps {
-        bat '''
-          for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do taskkill /PID %%a /F 2>NUL
-        '''
-      }
-    }
+  steps {
+    bat '''
+      for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
+        taskkill /PID %%a /F 2>NUL || ver >NUL
+      )
+      ver >NUL
+    '''
+  }
+}
+
 
     stage('Start API') {
       steps {
@@ -180,9 +184,12 @@ pipeline {
         }
       }
       bat '''
-        for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do taskkill /PID %%a /F 2>NUL
-        if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL
-      '''
+  for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
+    taskkill /PID %%a /F 2>NUL || ver >NUL
+  )
+  if exist backend\\docker-compose.db.yml docker compose -f backend\\docker-compose.db.yml down || ver >NUL
+'''
+
     }
   }
 }
