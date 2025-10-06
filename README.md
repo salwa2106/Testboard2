@@ -73,9 +73,9 @@ pip install -r requirements.txt
 # Run the app
 uvicorn app.main:app --reload --port 8001
 
-## Then open the API docs at:
- http://127.0.0.1:8001/docs
----
+Then open the API docs at:
+http://127.0.0.1:8001/docs
+
 
 ##  CI/CD Integration with Jenkins
 
