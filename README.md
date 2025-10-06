@@ -1,24 +1,74 @@
-#  TestBoard – QA Management Platform
+# TestBoard – QA Management & CI/CD Automation Platform
 
-**TestBoard** is a full-stack QA management system built with **FastAPI**, **React**, and **PostgreSQL**.  
-It enables test engineers to create, execute, and track test cases, runs, and results with full visibility.
+![Allure Report Screenshot](docs/allure-report-screenshot.png)
 
-### Tech Stack
-- **Backend:** FastAPI, SQLAlchemy, Alembic, PostgreSQL  
-- **Frontend:** React (TypeScript)  
-- **CI/CD:** Jenkins, Docker, GitHub Actions  
-- **Testing:** Pytest, Allure, Postman  
-- **Infrastructure:** Docker Compose, Virtualenv  
+> 🚀 A modern QA Management System with full CI/CD automation using **FastAPI**, **PostgreSQL**, **Pytest**, **Allure**, and **Jenkins**.
 
-###  CI/CD Pipeline
-The Jenkins pipeline automatically:
-1. Checks out the repository
-2. Creates a virtual environment
-3. Installs dependencies
-4. Runs database migrations
-5. Starts the API
-6. Executes Pytest and generates Allure reports
-7. Uploads test run data to TestBoard’s backend
+---
 
-### Allure Report Example
-(see the image above)
+##  Overview
+
+**TestBoard** is a full-stack QA management platform built for test engineers to **create**, **run**, and **track** test cases, test runs, and results — with complete automation through **Jenkins pipelines** and visual **Allure reports**.
+
+The platform is designed to simulate real-world QA workflows, integrating backend, database, CI/CD, and reporting layers into one continuous testing ecosystem.
+
+---
+
+##  Tech Stack
+
+| Layer | Technologies |
+|-------|---------------|
+| **Backend** | FastAPI · SQLAlchemy · Alembic · PostgreSQL |
+| **Frontend** | React (TypeScript) *(under development)* |
+| **Testing** | Pytest · Allure · Postman |
+| **CI/CD** | Jenkins · Docker · GitHub Actions |
+| **Environment** | Virtualenv · Docker Compose |
+| **Language** | Python 3.13 |
+
+---
+
+##  Jenkins CI/CD Pipeline
+
+The **Jenkins pipeline** automatically performs:
+
+1. **Checkout** repository from GitHub  
+2.  **Create and activate venv**  
+3.  **Install dependencies** via `requirements.txt`  
+4.  **Run database migrations** using Alembic  
+5.  **Start FastAPI server** on port `8001`  
+6.  **Execute tests** via Pytest  
+7.  **Generate Allure reports**  
+8.  **Authenticate and push results** to TestBoard’s backend  
+9.  **Clean up containers and processes**  
+
+ All steps are timestamped and logged in Jenkins, with test results published automatically to the **Allure dashboard**.
+
+---
+
+##  Allure Report Example
+
+![Allure Report Screenshot](docs/allure-report-screenshot.png)
+
+The screenshot above shows the **Allure report** generated automatically after a Jenkins pipeline run.  
+All tests passed successfully, including API and database validations.
+
+---
+
+##  How to Run Locally
+
+### Backend Setup
+
+```bash
+# Clone the repo
+git clone https://github.com/salwa2106/Testboard2.git
+cd Testboard2/backend
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # on Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the app
+uvicorn app.main:app --reload --port 8001
