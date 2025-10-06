@@ -75,27 +75,37 @@ uvicorn app.main:app --reload --port 8001
 
 ## Then open the API docs at:
  http://127.0.0.1:8001/docs
+---
 
- ##  CI/CD Integration with Jenkins
-  This project includes a Jenkinsfile that:
-  1.Creates a virtual environment
-  2.Installs dependencies
-  3.Runs migrations
-  4.Starts the FastAPI server
-  5.Executes tests with Pytest
-  6.Publishes Allure reports automatically
+##  CI/CD Integration with Jenkins
 
- ##  Example Test Run
-  Each pipeline automatically:
-  1.Logs into the API to retrieve an access token
-  2.Creates a CI run in TestBoard
-  3.Executes all tests
-  4.Uploads Allure results and publishes the report
-  5.All of this is fully automated in the Jenkins pipeline.
+This project includes a full **Jenkinsfile** that automates the entire testing lifecycle:
 
-### Author
- Salwa Naoum
- B.Sc. Information Systems, University of Haifa
- Focus: QA Automation · DevOps · CI/CD
- Linkedln Profile: www.linkedin.com/in/salwa-naoum-2305b2356
+1.Creates a virtual environment  
+2.Installs dependencies  
+3.Runs database migrations  
+4.Starts the FastAPI server  
+5.Executes tests with Pytest  
+6.Generates and publishes Allure reports automatically  
+
+---
+
+## Example Test Run
+
+Each Jenkins pipeline automatically:
+1.Logs into the API to retrieve an access token  
+2.Creates a CI run in TestBoard  
+3.Executes all tests  
+4. Uploads Allure results and publishes the report  
+
+Everything from **login → run creation → testing → reporting** is fully automated within Jenkins 🚀  
+
+---
+
+##  Author
+
+**Salwa Naoum**  
+ B.Sc. Information Systems, University of Haifa  
+ Focus: QA Automation · DevOps · CI/CD  
+[LinkedIn Profile](https://www.linkedin.com/in/salwa-naoum-2305b2356)
 
