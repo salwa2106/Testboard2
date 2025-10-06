@@ -73,21 +73,21 @@ pip install -r requirements.txt
 # Run the app
 uvicorn app.main:app --reload --port 8001
 
+---
 Then open the API docs at:
 http://127.0.0.1:8001/docs
 
+---
 
-##  CI/CD Integration with Jenkins
 
-This project includes a full **Jenkinsfile** that automates the entire testing lifecycle:
-
-1.Creates a virtual environment  
-2.Installs dependencies  
-3.Runs database migrations  
-4.Starts the FastAPI server  
-5.Executes tests with Pytest  
-6.Generates and publishes Allure reports automatically  
-
+🔁 CI/CD Integration with Jenkins
+This project includes a full Jenkinsfile that automates the entire testing lifecycle:
+1.Creates a virtual environment
+2.Installs dependencies
+3.Runs database migrations
+4.Starts the FastAPI server
+5.Executes tests with Pytest
+6.Generates and publishes Allure reports automatically
 ---
 
 ## Example Test Run
