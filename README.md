@@ -45,7 +45,7 @@ The **Jenkins pipeline** automatically performs:
 
 ---
 
-##  Allure Report Example
+## Allure Report Example
 
 ![Allure Report Screenshot](docs/allure-report-screenshot.png)
 
@@ -72,3 +72,30 @@ pip install -r requirements.txt
 
 # Run the app
 uvicorn app.main:app --reload --port 8001
+
+## Then open the API docs at:
+ http://127.0.0.1:8001/docs
+
+ ##  CI/CD Integration with Jenkins
+  This project includes a Jenkinsfile that:
+  1.Creates a virtual environment
+  2.Installs dependencies
+  3.Runs migrations
+  4.Starts the FastAPI server
+  5.Executes tests with Pytest
+  6.Publishes Allure reports automatically
+
+ ##  Example Test Run
+  Each pipeline automatically:
+  1.Logs into the API to retrieve an access token
+  2.Creates a CI run in TestBoard
+  3.Executes all tests
+  4.Uploads Allure results and publishes the report
+  5.All of this is fully automated in the Jenkins pipeline.
+
+### Author
+ Salwa Naoum
+ B.Sc. Information Systems, University of Haifa
+ Focus: QA Automation · DevOps · CI/CD
+ Linkedln Profile: www.linkedin.com/in/salwa-naoum-2305b2356
+
